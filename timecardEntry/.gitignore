@@ -1,0 +1,7 @@
+credentials.yaml
+timesheet_data.csv
+venv
+venv/
+/venv
+/venv/
+.env
