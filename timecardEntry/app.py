@@ -1,4 +1,5 @@
 import secrets
+import bcrypt
 import streamlit as st
 import streamlit_authenticator as stauth
 from datetime import datetime, timedelta, date
@@ -9,6 +10,7 @@ import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 import os
+import yagmail
 from dotenv import load_dotenv
 
 # Load environment variables from .env
@@ -20,7 +22,7 @@ class DatabaseManager:
     def __init__(self):
         """Initialize the database connection pool."""
         # Database connection parameters
-        db_host = os.getenv("DB_HOST")
+        db_host = os.getenv("DB_HOST", "host.docker.internal")  # Use Docker's internal hostname
         db_port = os.getenv("DB_PORT")
         db_name = os.getenv("DB_NAME")
         db_user = os.getenv("DB_USER")
@@ -100,6 +102,16 @@ class DatabaseManager:
                         submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
+
+                # Create password reset tokens table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                        id SERIAL PRIMARY KEY,
+                        email VARCHAR(255) UNIQUE NOT NULL REFERENCES volunteers(email) ON DELETE CASCADE,
+                        token TEXT NOT NULL,
+                        expires_at TIMESTAMP NOT NULL
+                    );
+                """)
                 
                 # Insert default projects if they don't exist
                 default_projects = [
@@ -123,6 +135,31 @@ class DatabaseManager:
     def close_all_connections(self):
         """Close all database connections."""
         self.connection_pool.closeall()
+
+    def create_reset_token(self, email):
+        """Generate and store a password reset token for the given email."""
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # Generate a secure random token
+                token = secrets.token_urlsafe(32)
+                expires_at = datetime.utcnow() + timedelta(hours=1)  # Token expires in 1 hour
+
+                # Insert or update the reset token
+                cursor.execute("""
+                    INSERT INTO password_reset_tokens (email, token, expires_at)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (email) DO UPDATE 
+                    SET token = EXCLUDED.token, expires_at = EXCLUDED.expires_at;
+                """, (email, token, expires_at))
+
+                conn.commit()
+                return token  # Return the token for sending in the email
+        except Exception as e:
+            conn.rollback()
+            st.error(f"Error creating reset token: {e}")
+        finally:
+            self.release_connection(conn)
 
 
 class VolunteerTimesheet:
@@ -247,6 +284,7 @@ class VolunteerTimesheet:
         finally:
             self.db_manager.release_connection(conn)
 
+
     def render_authentication(self):
         """Render authentication page with login and registration options."""
         st.title("MIMA Volunteer's Timesheet")
@@ -287,6 +325,10 @@ class VolunteerTimesheet:
                 else:
                     st.warning('Please enter your username and password.')
 
+            if st.button("Forgot Password?"):
+                st.session_state["reset_password"] = True
+                st.rerun()
+
         with register_tab:
             try:
                 if st.session_state.get('registration_success', False):
@@ -312,6 +354,115 @@ class VolunteerTimesheet:
 
             except Exception as e:
                 st.error(f'An error occurred: {e}')
+
+
+    def render_password_reset(self):
+        """Render password reset form."""
+        st.title("Reset Password")
+
+        token = st.query_params.get("reset_token", [None])
+        print(f"The token is : {token}")
+
+        if token[0]:
+            new_password = st.text_input("New Password", type="password")
+            confirm_password = st.text_input("Confirm Password", type="password")
+
+            if st.button("Reset Password"):
+                if new_password != confirm_password:
+                    st.error("Passwords do not match!")
+                else:
+                    success, message = self.reset_password(token, new_password)
+                    if success:
+                        st.success("Password successfully reset! You can now log in.")
+                        st.session_state.pop("reset_password", None)
+                    else:
+                        st.error(message)
+        else:
+            email = st.text_input("Enter your registered email")
+            if st.button("Send Reset Link"):
+                success, message = self.send_reset_email(email)
+                if success:
+                    st.success("A password reset link has been sent to your email.")
+                else:
+                    st.error(message)
+
+        st.button("Back to Login", on_click=lambda: st.session_state.pop("reset_password", None))
+
+
+    def send_reset_email(self, email):
+        """Send password reset email with a unique token link."""
+        conn = self.db_manager.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT username FROM volunteers WHERE email = %s", (email,))
+                user = cursor.fetchone()
+                print(f"The user is : {user}")
+
+                if not user:
+                    return False, "Email not found in our records."
+
+            # Generate and store a token
+            token = self.db_manager.create_reset_token(email)
+            reset_link = f"http://192.168.1.40:8501/?reset_token={token}"
+
+            email = os.getenv("EMAIL")
+            password = os.getenv("PASSWORD")
+
+            print(f"Email is : {email}")
+            print(f"Password is : {password}")
+            print(f"Reset link is : {reset_link}")
+
+            # Send the email
+            yag = yagmail.SMTP(email, password)
+            subject = "Password Reset Request"
+            body = f"Click the following link to reset your password: {reset_link}"
+            yag.send(email, subject, body)
+
+            return True, "Reset link sent."
+        except Exception as e:
+            return False, f"Error sending email: {e}"
+        finally:
+            self.db_manager.release_connection(conn)
+
+    
+    def reset_password(self, token, new_password):
+        """Reset password using a token."""
+        conn = self.db_manager.get_connection()
+        try:
+            with conn.cursor() as cursor:
+                # Check if the token is valid and not expired
+                cursor.execute("SELECT email FROM password_reset_tokens WHERE token = %s AND expires_at > NOW()", (token,))
+                result = cursor.fetchone()
+
+                if not result:
+                    return False, "Invalid or expired token."
+
+                email = result[0]
+                # hashed_password = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
+                hashed_password = stauth.Hasher.hash(new_password)
+
+                # Update user's password
+                cursor.execute("""
+                    UPDATE volunteers 
+                    SET password_hash = %s 
+                    WHERE email = %s
+                """, (hashed_password, email))
+
+                # Delete the used token
+                cursor.execute("DELETE FROM password_reset_tokens WHERE email = %s", (email,))
+
+                conn.commit()
+
+                # ✅ Clear session state for reset process
+                st.session_state.pop("reset_password", None)
+                st.session_state.pop("reset_token", None)
+
+                return True, "Password successfully reset."
+        finally:
+            self.db_manager.release_connection(conn)
+
+
+
 
 
     def logout_button(self):
@@ -755,6 +906,17 @@ class VolunteerTimesheet:
         finally:
             self.db_manager.release_connection(conn)
 
+def hash_function(password: str) -> str:
+    """Hash a password using bcrypt."""
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password.encode("utf-8"), salt)
+    return hashed_password.decode("utf-8")
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    """Verify a password against its hashed version."""
+    return bcrypt.checkpw(password.encode("utf-8"), hashed_password.encode("utf-8"))
+
+
 
 def main():
     st.set_page_config(page_title="MIMA Volunteer Timesheet", page_icon="🕒")
@@ -800,7 +962,9 @@ def main():
             st.session_state["authentication_status"] = False  # Ensure clean state
 
     # **Now decide what to render based on session state**
-    if st.session_state.get("authentication_status"):
+    if st.session_state.get("reset_password"):
+        timesheet.render_password_reset()  # Show password reset page
+    elif st.session_state.get("authentication_status"):
         timesheet.render()  # Show main app
     else:
         timesheet.render_authentication()  # Show login page
