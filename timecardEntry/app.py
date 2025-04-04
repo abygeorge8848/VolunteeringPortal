@@ -570,7 +570,7 @@ class VolunteerTimesheet:
             # Generate and store a token
             token = self.db_manager.create_reset_token(email)
             endpoint = os.getenv("ENDPOINT")
-            reset_link = f"endpoint/?reset_token={token}"
+            reset_link = f"{endpoint}/?reset_token={token}"
 
             email = os.getenv("EMAIL")
             password = os.getenv("PASSWORD")
