@@ -94,8 +94,6 @@ class DatabaseManager:
                         passport_photo BYTEA,
                         aadhar_card_image BYTEA,
                         pan_card_image BYTEA,
-
-                        CONSTRAINT gender_constraint CHECK (gender IN ('male', 'female', 'other', 'prefer not to say'))
                     );
                 """)
                 
