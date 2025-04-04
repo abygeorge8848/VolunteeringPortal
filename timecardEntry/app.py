@@ -86,14 +86,14 @@ class DatabaseManager:
                         address TEXT,
                         reason_to_join TEXT,
                         preferred_joining_date DATE,
-                        preferred_working_days TEXT[],       -- e.g., {'Monday', 'Wednesday'}
+                        preferred_working_days TEXT[],      
                         volunteership_type VARCHAR(100),
-                        fields_of_interest TEXT[],           -- e.g., {'Education', 'Healthcare'}
+                        fields_of_interest TEXT[],        
                         other_skills TEXT,
                         previous_experience TEXT,
                         passport_photo BYTEA,
                         aadhar_card_image BYTEA,
-                        pan_card_image BYTEA,
+                        pan_card_image BYTEA
                     );
                 """)
                 
@@ -266,8 +266,8 @@ class VolunteerTimesheet:
             self.db_manager.release_connection(conn)
         return projects
     
-    def register_user(self, name, email, username, password):
-        """Register a new user in the database."""
+    def register_user(self, name, email, username, password, extra):
+        """Register a new user in the database with optional extended fields."""
         conn = self.db_manager.get_connection()
         try:
             with conn.cursor() as cursor:
@@ -283,23 +283,57 @@ class VolunteerTimesheet:
                 
                 # Hash the password
                 hashed_password = stauth.Hasher.hash(password)
-                
-                # Insert the new user
-                cursor.execute(
-                    "INSERT INTO volunteers (username, name, email, password_hash) VALUES (%s, %s, %s, %s)",
-                    (username, name, email, hashed_password)
-                )
+    
+                # Prepare insert query with all optional fields
+                cursor.execute("""
+                    INSERT INTO volunteers (
+                        username, name, email, password_hash,
+                        date_of_birth, gender, father_name, profession_or_education,
+                        college, mobile_number, address, reason_to_join,
+                        preferred_joining_date, preferred_working_days, volunteership_type,
+                        fields_of_interest, other_skills, previous_experience,
+                        passport_photo, aadhar_card_image, pan_card_image
+                    )
+                    VALUES (%s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s, %s,
+                            %s, %s, %s)
+                """, (
+                    username,
+                    name,
+                    email,
+                    hashed_password,
+                    extra.get("dob"),
+                    extra.get("gender"),
+                    extra.get("father_name"),
+                    extra.get("profession_or_education"),
+                    extra.get("college"),
+                    extra.get("mobile_number"),
+                    extra.get("address"),
+                    extra.get("reason_to_join"),
+                    extra.get("preferred_joining_date"),
+                    extra.get("preferred_days"),
+                    extra.get("vol_type"),
+                    extra.get("fields_of_interest"),
+                    extra.get("skills"),
+                    extra.get("experience"),
+                    extra.get("passport_photo"),
+                    extra.get("aadhar"),
+                    extra.get("pan")
+                ))
+    
                 conn.commit()
-                
-                # Update the credentials in memory
                 self.load_credentials_from_db()
-                
                 return True, "Registration successful"
+    
         except Exception as e:
             conn.rollback()
             return False, f"Registration error: {e}"
         finally:
             self.db_manager.release_connection(conn)
+
 
 
     def render_authentication(self):
@@ -352,17 +386,132 @@ class VolunteerTimesheet:
                     st.success('Registration successful! Please log in.')
                     st.session_state.registration_success = False
 
-                reg_name = st.text_input('Name', key='reg_name')
-                reg_email = st.text_input('Email', key='reg_email')
-                reg_username = st.text_input('Username', key='reg_username')
-                reg_password = st.text_input('Password', type='password', key='reg_password')
-                reg_password_confirm = st.text_input('Confirm Password', type='password', key='reg_password_confirm')
+                st.markdown("### Guidelines for Registration")
+                st.info("""
+                    ### 📝 Volunteer Registration Form
+
+                    This is a form for the registration process to be started.  
+                    **One-time Registration Fee:** ₹200/-
+
+                    ---
+
+                    ### 📌 Types of Volunteer-ship
+
+                    **Offline**
+                    - Event Volunteer-ship
+                    - Long Term: 3 months / 6 months / 1 year
+
+                    **Online**
+                    - 80 hours
+                    - 120 hours
+
+                    ---
+
+                    ### ✅ Eligibility
+
+                    - Association should be continuous.
+                    - Assigned work must be completed within the stipulated time.
+                    - Certificate will be approved by the Department Head.
+
+                    ---
+
+                    ### 🎖️ Rewards
+
+                    - Certificate immediately after completion of the event.
+                    - Certificates for:
+                      - 3 months, 6 months & 1 year (offline)
+                      - 80 or 120 hours (online)
+                    - Appreciation for 6 months & 1 year service.
+                    - Letter of Recommendation after completing 1 year.
+                    - Eligibility for promotion to **Volunteer Coordinator** after 1 year, if continuing.
+
+                    ---
+
+                    ### 📎 Guidelines
+
+                    - Always coordinate directly with the designated person.
+                    - Communication is mandatory in case of delays or before taking any leave/gap.
+                    - Attendance in all meetings organized by **MIMA** or the **Department Head** is compulsory.
+
+                """)
+
+                # Required fields
+                reg_name = st.text_input('Name*', key='reg_name')
+                reg_email = st.text_input('Email*', key='reg_email')
+                reg_username = st.text_input('Username*', key='reg_username')
+                reg_password = st.text_input('Password*', type='password', key='reg_password')
+                reg_password_confirm = st.text_input('Confirm Password*', type='password', key='reg_password_confirm')
+
+                # Optional fields
+                dob = st.date_input('Date of Birth', key='reg_dob')
+                gender = st.selectbox('Gender', ['male', 'female', 'prefer not to say', 'other'], key='reg_gender')
+                if gender == 'other':
+                    gender = st.text_input("Please specify your gender", key='reg_gender_other') or 'other'
+
+                father_name = st.text_input("Father's Name", key='reg_father_name')
+                profession_or_education = st.text_input("Profession / Educational Qualification", key='reg_profession')
+                college = st.text_input("College", key='reg_college')
+                mobile_number = st.text_input("Mobile Number", key='reg_mobile')
+                address = st.text_area("Address", key='reg_address')
+                reason_to_join = st.text_area("Why do you want to join the organization?", key='reg_reason')
+                preferred_joining_date = st.date_input("Preferred Date of Joining", key='reg_join_date')
+
+                preferred_days = st.multiselect("Preferred Days of Working", [
+                    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+                ], key='reg_work_days')
+
+                volunteership_type = st.radio("Type of Volunteership", [
+                    'Event Volunteership (offline)', '3 Months (offline)', '6 months (offline)', '1 Year (offline)', '80 Hours (online)', '120 Hours (online)'
+                ], key='reg_vol_type')
+
+                fields_of_interest = st.multiselect("Field(s) of Interest", [
+                    'Digital  marketing', 'Fundraiser', 'Data entry', 'Event creator', 'Report writing', 'Networking', 'Public relation', 'Teaching', 'Event management', 
+                    'Content Writer', 'Research and Development', 'Others'
+                ], key='reg_interests')
+
+                other_skills = st.text_area("Other Skills", key='reg_skills')
+                previous_experience = st.text_area("Any Previous Experience in social sector. (NA in case of no experience)", key='reg_experience')
+
+                passport_photo = st.file_uploader("Upload Passport Size Photo", type=['jpg', 'jpeg', 'png'], key='reg_passport')
+                aadhar_card = st.file_uploader("Upload Aadhaar Card", type=['jpg', 'jpeg', 'png', 'pdf'], key='reg_aadhar')
+                pan_card = st.file_uploader("Upload PAN Card", type=['jpg', 'jpeg', 'png', 'pdf'], key='reg_pan')
 
                 if st.button('Register'):
                     if reg_password != reg_password_confirm:
                         st.error('Passwords do not match')
+                    elif not all([reg_name, reg_email, reg_username, reg_password]):
+                        st.error("Please fill in all required fields")
                     else:
-                        success, message = self.register_user(reg_name, reg_email, reg_username, reg_password)
+                        # Prepare optional values (convert to None if empty)
+                        values = {
+                            "dob": dob if dob else None,
+                            "gender": gender,
+                            "father_name": father_name or None,
+                            "profession_or_education": profession_or_education or None,
+                            "college": college or None,
+                            "mobile_number": mobile_number or None,
+                            "address": address or None,
+                            "reason_to_join": reason_to_join or None,
+                            "preferred_joining_date": preferred_joining_date if preferred_joining_date else None,
+                            "preferred_days": preferred_days if preferred_days else None,
+                            "vol_type": volunteership_type,
+                            "fields_of_interest": fields_of_interest if fields_of_interest else None,
+                            "skills": other_skills or None,
+                            "experience": previous_experience or None,
+                            "passport_photo": passport_photo.read() if passport_photo else None,
+                            "aadhar": aadhar_card.read() if aadhar_card else None,
+                            "pan": pan_card.read() if pan_card else None
+                        }
+
+                        # Pass everything to your registration function
+                        success, message = self.register_user(
+                            name=reg_name,
+                            email=reg_email,
+                            username=reg_username,
+                            password=reg_password,
+                            extra=values
+                        )
+
                         if success:
                             st.session_state.registration_success = True
                             st.rerun()
