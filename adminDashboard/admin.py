@@ -10,7 +10,8 @@ from datetime import datetime, timedelta
 import streamlit_authenticator as stauth
 from configparser import ConfigParser
 from dotenv import load_dotenv
-
+import yagmail
+import time
 # Load environment variables from .env
 load_dotenv()
 
@@ -50,7 +51,7 @@ class AdminDashboard:
         """Connect to PostgreSQL database using config."""
         try:
             # Try to get database connection parameters from environment variables first
-            db_host = os.getenv("DB_HOST")
+            db_host = os.getenv("DB_HOST", "host.docker.internal")  # Use Docker's internal hostname
             db_port = os.getenv("DB_PORT")
             db_name = os.getenv("DB_NAME")
             db_user = os.getenv("DB_USER")
@@ -410,6 +411,10 @@ class AdminDashboard:
                     st.error('Incorrect username or password. Please try again.')
                 else:
                     st.warning('Please enter your admin username and password.')
+            
+            if st.button("Forgot Password?"):
+                st.session_state["reset_password"] = True
+                st.rerun()
 
         with register_tab:
             try:
@@ -643,6 +648,144 @@ class AdminDashboard:
                 else:
                     st.error(message)
 
+    
+    def reset_password(self, token, new_password):
+        """Reset password using a token."""
+        # conn = self.db_manager.get_connection()
+        
+        try:
+            with self.conn.cursor() as cursor:
+                # Check if the token is valid and not expired
+                cursor.execute("SELECT email FROM password_reset_tokens WHERE token = %s AND expires_at > NOW()", (token,))
+                result = cursor.fetchone()
+
+                if not result:
+                    return False, "Invalid or expired token."
+
+                email = result[0]
+                # hashed_password = bcrypt.hashpw(new_password.encode(), bcrypt.gensalt())
+                hashed_password = stauth.Hasher.hash(new_password)
+
+                # Update user's password
+                cursor.execute("""
+                    UPDATE admins 
+                    SET password_hash = %s 
+                    WHERE email = %s
+                """, (hashed_password, email))
+
+                # Delete the used token
+                cursor.execute("DELETE FROM password_reset_tokens WHERE email = %s", (email,))
+
+                self.conn.commit()
+
+                # ✅ Clear session state for reset process
+                st.session_state.pop("reset_password", None)
+                st.session_state.pop("reset_token", None)
+
+                return True, "Password successfully reset."
+        finally:
+            print("Release the conection")
+            cursor.close()
+            # self.db_manager.release_connection(conn)
+
+
+    def create_reset_token(self, email):
+        """Generate and store a password reset token for the given email."""
+        # conn = self.get_connection()
+        try:
+            with self.conn.cursor() as cursor:
+                # Generate a secure random token
+                token = secrets.token_urlsafe(32)
+                expires_at = datetime.utcnow() + timedelta(hours=1)  # Token expires in 1 hour
+
+                # Insert or update the reset token
+                cursor.execute("""
+                    INSERT INTO password_reset_tokens (email, token, expires_at)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (email) DO UPDATE 
+                    SET token = EXCLUDED.token, expires_at = EXCLUDED.expires_at;
+                """, (email, token, expires_at))
+
+                self.conn.commit()
+                return token  # Return the token for sending in the email
+        except Exception as e:
+            self.conn.rollback()
+            st.error(f"Error creating reset token: {e}")
+        finally:
+            cursor.close()
+
+
+    def send_reset_email(self, email):
+        """Send password reset email with a unique token link."""
+        # conn = self.db_manager.get_connection()
+        try:
+            with self.conn.cursor() as cursor:
+                cursor.execute("SELECT name FROM admins WHERE email = %s", (email,))
+                user = cursor.fetchone()
+                print(f"The user is : {user}")
+
+                if not user:
+                    return False, "Email not found in our records."
+
+            # Generate and store a token
+            token = self.create_reset_token(email)
+            reset_link = f"http://192.168.1.40:8502/?reset_token={token}"
+
+            email = os.getenv("EMAIL")
+            password = os.getenv("PASSWORD")
+
+            print(f"Email is : {email}")
+            print(f"Password is : {password}")
+            print(f"Reset link is : {reset_link}")
+
+            # Send the email
+            yag = yagmail.SMTP(email, password)
+            subject = "Password Reset Request"
+            body = f"Click the following link to reset your password: {reset_link}"
+            yag.send(email, subject, body)
+
+            return True, "Reset link sent."
+        except Exception as e:
+            return False, f"Error sending email: {e}"
+        finally:
+            cursor.close()
+            print("Release the connection")
+            # self.db_manager.release_connection(conn)
+
+
+    def render_password_reset(self):
+        """Render password reset form."""
+        st.title("Reset Password")
+
+        token = st.query_params.get("reset_token", [None])
+        print(f"The token is : {token}")
+
+        if token[0]:
+            new_password = st.text_input("New Password", type="password")
+            confirm_password = st.text_input("Confirm Password", type="password")
+
+            if st.button("Reset Password"):
+                if new_password != confirm_password:
+                    st.error("Passwords do not match!")
+                else:
+                    success, message = self.reset_password(token, new_password)
+                    if success:
+                        st.success("Password successfully reset! You can now log in.")
+                        st.session_state.pop("reset_password", None)
+                    else:
+                        st.error(message)
+        else:
+            email = st.text_input("Enter your registered email")
+            if st.button("Send Reset Link"):
+                success, message = self.send_reset_email(email)
+                if success:
+                    st.success("A password reset link has been sent to your email.")
+                else:
+                    st.error(message)
+
+        st.button("Back to Login", on_click=lambda: st.session_state.pop("reset_password", None))
+
+
     def run(self):
         """Main entry point for the admin dashboard."""
         if not self.conn:
@@ -669,8 +812,10 @@ class AdminDashboard:
                 - DB_PASSWORD
                 """)
             return
-            
-        if st.session_state.get('authentication_status'):
+        
+        if st.session_state.get("reset_password"):
+            self.render_password_reset()  # Show password reset page
+        elif st.session_state.get('authentication_status'):
             self.render_dashboard()
         else:
             self.render_authentication()
