@@ -275,15 +275,15 @@ class VolunteerTimesheet:
                 cursor.execute("SELECT 1 FROM volunteers WHERE username = %s", (username,))
                 if cursor.fetchone():
                     return False, "Username already exists"
-                
+
                 # Check if email already exists
                 cursor.execute("SELECT 1 FROM volunteers WHERE email = %s", (email,))
                 if cursor.fetchone():
                     return False, "Email already exists"
-                
+
                 # Hash the password
                 hashed_password = stauth.Hasher.hash(password)
-    
+
                 # Prepare insert query with all optional fields
                 cursor.execute("""
                     INSERT INTO volunteers (
@@ -323,11 +323,11 @@ class VolunteerTimesheet:
                     extra.get("aadhar"),
                     extra.get("pan")
                 ))
-    
+
                 conn.commit()
                 self.load_credentials_from_db()
                 return True, "Registration successful"
-    
+
         except Exception as e:
             conn.rollback()
             return False, f"Registration error: {e}"
@@ -569,7 +569,8 @@ class VolunteerTimesheet:
 
             # Generate and store a token
             token = self.db_manager.create_reset_token(email)
-            reset_link = f"http://192.168.1.40:8501/?reset_token={token}"
+            endpoint = os.getenv("ENDPOINT")
+            reset_link = f"endpoint/?reset_token={token}"
 
             email = os.getenv("EMAIL")
             password = os.getenv("PASSWORD")
