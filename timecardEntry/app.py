@@ -76,7 +76,26 @@ class DatabaseManager:
                         name VARCHAR(100) NOT NULL,
                         email VARCHAR(255) UNIQUE NOT NULL,
                         password_hash TEXT NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        date_of_birth DATE,
+                        gender VARCHAR(50),
+                        father_name VARCHAR(100),
+                        profession_or_education VARCHAR(255),
+                        college VARCHAR(255),
+                        mobile_number VARCHAR(15),
+                        address TEXT,
+                        reason_to_join TEXT,
+                        preferred_joining_date DATE,
+                        preferred_working_days TEXT[],       -- e.g., {'Monday', 'Wednesday'}
+                        volunteership_type VARCHAR(100),
+                        fields_of_interest TEXT[],           -- e.g., {'Education', 'Healthcare'}
+                        other_skills TEXT,
+                        previous_experience TEXT,
+                        passport_photo BYTEA,
+                        aadhar_card_image BYTEA,
+                        pan_card_image BYTEA,
+
+                        CONSTRAINT gender_constraint CHECK (gender IN ('male', 'female', 'other', 'prefer not to say'))
                     );
                 """)
                 
@@ -460,9 +479,6 @@ class VolunteerTimesheet:
                 return True, "Password successfully reset."
         finally:
             self.db_manager.release_connection(conn)
-
-
-
 
 
     def logout_button(self):
