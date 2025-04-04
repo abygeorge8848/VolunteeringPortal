@@ -93,6 +93,8 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
+---
+
 ## 📌 Notes
  - Both apps must be able to read their .env file—ensure it is created before launching the app.
 
@@ -100,6 +102,8 @@ streamlit run app.py
 
  - Use environment variables for all sensitive data—never commit .env files to version control.
 
+
+---
 
 ## 🧹 Optional Cleanup
 
@@ -113,5 +117,7 @@ rm -rf venv  # macOS/Linux
 rmdir /s venv  # Windows (Command Prompt)
 ```
 
+---
+
 ## 📬 Support
- # If you run into issues, feel free to open an issue or submit a pull request.
+  If you run into issues, feel free to open an issue or submit a pull request.
