@@ -382,10 +382,10 @@ class VolunteerTimesheet:
 
         with register_tab:
             try:
-                if st.session_state.get('registration_success', False):
+                registration_success = st.session_state.get('registration_success', False)
+                if registration_success:
                     st.success('Registration successful! Please log in.')
-                    st.session_state.registration_success = False
-
+                    
                 st.markdown("### Guidelines for Registration")
                 st.info("""
                     ### 📝 Volunteer Registration Form
@@ -475,6 +475,10 @@ class VolunteerTimesheet:
                 passport_photo = st.file_uploader("Upload Passport Size Photo", type=['jpg', 'jpeg', 'png'], key='reg_passport')
                 aadhar_card = st.file_uploader("Upload Aadhaar Card", type=['jpg', 'jpeg', 'png', 'pdf'], key='reg_aadhar')
                 pan_card = st.file_uploader("Upload PAN Card", type=['jpg', 'jpeg', 'png', 'pdf'], key='reg_pan')
+
+                if registration_success:
+                    st.success('Registration successful! Please log in.')
+                    st.session_state.registration_success = False
 
                 if st.button('Register'):
                     if reg_password != reg_password_confirm:
