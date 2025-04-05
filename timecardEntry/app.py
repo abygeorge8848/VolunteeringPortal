@@ -556,8 +556,17 @@ class VolunteerTimesheet:
                 else:
                     st.error(message)
 
-        st.button("Back to Login", on_click=lambda: st.session_state.pop("reset_password", None))
+        
+        st.button("Back to Login", on_click = self.clear_reset_state)
 
+    
+    def clear_reset_state(self):
+        st.session_state.pop("reset_password", None)
+        st.session_state.pop("reset_token", None)
+        st.query_params.clear()
+        st.session_state["reroute_to_login"] = True  # Signal rerun outside
+        
+        
 
     def send_reset_email(self, email):
         """Send password reset email with a unique token link."""
@@ -576,15 +585,15 @@ class VolunteerTimesheet:
             endpoint = os.getenv("ENDPOINT")
             reset_link = f"{endpoint}/?reset_token={token}"
 
-            email = os.getenv("EMAIL")
+            server_email = os.getenv("EMAIL")
             password = os.getenv("PASSWORD")
 
-            print(f"Email is : {email}")
+            print(f"Email is : {server_email}")
             print(f"Password is : {password}")
             print(f"Reset link is : {reset_link}")
 
             # Send the email
-            yag = yagmail.SMTP(email, password)
+            yag = yagmail.SMTP(server_email, password)
             subject = "Password Reset Request"
             body = f"Click the following link to reset your password: {reset_link}"
             yag.send(email, subject, body)
@@ -778,13 +787,153 @@ class VolunteerTimesheet:
                 st.session_state.timesheet_df = self.create_timesheet_dataframe()
 
         # Tabs for Time Entry and Statistics
-        tab1, tab2 = st.tabs(["🕒 Time Entry", "📊 Statistics"])
+        tab1, tab2, tab3 = st.tabs(["🕒 Time Entry", "📊 Statistics", "👤 Profile"])
+
 
         with tab1:
             self.render_time_entry()
 
         with tab2:
             self.render_statistics()
+        
+        with tab3:
+            conn = self.db_manager.get_connection()
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT
+                            name, email, username, date_of_birth, gender, father_name,
+                            profession_or_education, college, mobile_number, address,
+                            reason_to_join, preferred_joining_date, preferred_working_days,
+                            volunteership_type, fields_of_interest, other_skills,
+                            previous_experience, passport_photo, aadhar_card_image, pan_card_image
+                        FROM volunteers
+                        WHERE username = %s
+                    """, (username,))
+                    profile = cursor.fetchone()
+        
+                    if not profile:
+                        st.error("Profile data not found.")
+                        return
+        
+                    # Unpack and prepare data
+                    (
+                        name, email, username_db, dob, gender, father_name, profession, college,
+                        mobile, address, reason, joining_date, work_days, vol_type, interest_fields,
+                        skills, experience, passport_img, aadhar_img, pan_img
+                    ) = profile
+        
+                    with st.form("update_profile_form"):
+                        st.subheader("Update Your Profile")
+        
+                        name = st.text_input("Name", value=name)
+                        email = st.text_input("Email", value=email)
+                        dob = st.date_input("Date of Birth", value=dob) if dob else st.date_input("Date of Birth")
+                        gender = st.selectbox("Gender", ["Male", "Female", "Prefer not to say", "Other"], index=["Male", "Female", "Prefer not to say", "Other"].index(gender) if gender in ["Male", "Female", "Prefer not to say", "Other"] else 3)
+                        if gender == "Other":
+                            gender = st.text_input("Specify Gender", value=gender)
+        
+                        father_name = st.text_input("Father's Name", value=father_name or "")
+                        profession = st.text_input("Profession / Education", value=profession or "")
+                        college = st.text_input("College", value=college or "")
+                        mobile = st.text_input("Mobile Number", value=mobile or "")
+                        address = st.text_area("Address", value=address or "")
+                        reason = st.text_area("Reason to Join", value=reason or "")
+                        joining_date = st.date_input("Preferred Joining Date", value=joining_date) if joining_date else st.date_input("Preferred Joining Date")
+                    
+                        days_selected = st.multiselect(
+                            "Preferred Working Days",
+                            options=["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+                            default = work_days if work_days else []
+                        )
+                        vol_type = st.radio(
+                            "Type of Volunteership",
+                            ['Event Volunteership (offline)', '3 Months (offline)', '6 months (offline)', '1 Year (offline)', '80 Hours (online)', '120 Hours (online)'],
+                            index=['Event Volunteership (offline)', '3 Months (offline)', '6 months (offline)', '1 Year (offline)', '80 Hours (online)', '120 Hours (online)'].index(vol_type) if vol_type else 0
+                        )
+                        interest_fields = st.multiselect(
+                            "Fields of Interest",
+                            options=['Digital  marketing', 'Fundraiser', 'Data entry', 'Event creator', 'Report writing', 'Networking', 'Public relation', 'Teaching', 'Event management', 
+                    'Content Writer', 'Research and Development', 'Others'],
+                            default = interest_fields if interest_fields else []
+                        )
+                        skills = st.text_input("Other Skills", value=skills or "")
+                        experience = st.text_area("Previous Experience", value=experience or "")
+        
+                        st.markdown("#### Upload Documents")
+
+                        def show_upload(label, file_blob):
+                            if file_blob:
+                                st.image(bytes(file_blob), width=200, caption=f"Existing {label}")
+                            else:
+                                st.markdown(f"**{label}:** _No document uploaded_")
+                            return st.file_uploader(f"Upload New {label}", type=["jpg", "jpeg", "png"], key=label)
+                        
+                        passport_img_new = show_upload("Passport Size Photo", passport_img)
+                        aadhar_img_new = show_upload("Aadhar Card", aadhar_img)
+                        pan_img_new = show_upload("PAN Card", pan_img)
+        
+                        if st.form_submit_button("Save Profile"):
+                            try:
+                                cursor.execute("""
+                                    UPDATE volunteers
+                                    SET
+                                        name = %s,
+                                        email = %s,
+                                        date_of_birth = %s,
+                                        gender = %s,
+                                        father_name = %s,
+                                        profession_or_education = %s,
+                                        college = %s,
+                                        mobile_number = %s,
+                                        address = %s,
+                                        reason_to_join = %s,
+                                        preferred_joining_date = %s,
+                                        preferred_working_days = %s,
+                                        volunteership_type = %s,
+                                        fields_of_interest = %s,
+                                        other_skills = %s,
+                                        previous_experience = %s,
+                                        passport_photo = %s,
+                                        aadhar_card_image = %s,
+                                        pan_card_image = %s
+                                    WHERE username = %s
+                                """, (
+                                    name,
+                                    email,
+                                    dob,
+                                    gender,
+                                    father_name,
+                                    profession,
+                                    college,
+                                    mobile,
+                                    address,
+                                    reason,
+                                    joining_date,
+                                    days_selected,
+                                    vol_type,
+                                    interest_fields,
+                                    skills,
+                                    experience,
+                                    passport_img.read() if passport_img else profile[17],
+                                    aadhar_img.read() if aadhar_img else profile[18],
+                                    pan_img.read() if pan_img else profile[19],
+                                    username
+                                ))
+                                conn.commit()
+                                st.success("Profile updated successfully!")
+        
+                                # Optional: update session state if name/email changed
+                                st.session_state['name'] = name
+                                st.session_state['email'] = email
+                            except Exception as e:
+                                conn.rollback()
+                                st.error(f"Error updating profile: {e}")
+            finally:
+                self.db_manager.release_connection(conn)
+
+
+        
 
     def render_time_entry(self):
         """Renders the time entry grid with Save and Submit functionality."""
@@ -1092,6 +1241,16 @@ def main():
     # Initialize the timesheet application
     timesheet = VolunteerTimesheet()
 
+    query_params = st.query_params
+    if "reset_token" in query_params and "reset_password" not in st.session_state:
+        st.session_state["reset_token"] = query_params["reset_token"]
+        st.session_state["reset_password"] = True
+        st.rerun()  # Set state and rerun to render the correct page
+
+    if st.session_state.get("reroute_to_login"):
+        st.session_state.pop("reroute_to_login")
+        st.rerun()
+
     # Ensure session state is initialized correctly
     if "authentication_status" not in st.session_state:
         st.session_state["authentication_status"] = None  # Initialize properly
@@ -1131,10 +1290,13 @@ def main():
 
     # **Now decide what to render based on session state**
     if st.session_state.get("reset_password"):
+        print("Password reset state on")
         timesheet.render_password_reset()  # Show password reset page
     elif st.session_state.get("authentication_status"):
+        print("User authenticated")
         timesheet.render()  # Show main app
     else:
+        print("Redirecting to login page")
         timesheet.render_authentication()  # Show login page
 
     # Clean up database connections when app is done
