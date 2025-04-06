@@ -729,17 +729,18 @@ class AdminDashboard:
 
             # Generate and store a token
             token = self.create_reset_token(email)
-            reset_link = f"http://192.168.1.40:8502/?reset_token={token}"
+            endpoint = os.getenv("ENDPOINT")
+            reset_link = f"{endpoint}/?reset_token={token}"
 
-            email = os.getenv("EMAIL")
+            server_email = os.getenv("EMAIL")
             password = os.getenv("PASSWORD")
 
-            print(f"Email is : {email}")
+            print(f"Email is : {server_email}")
             print(f"Password is : {password}")
             print(f"Reset link is : {reset_link}")
 
             # Send the email
-            yag = yagmail.SMTP(email, password)
+            yag = yagmail.SMTP(server_email, password)
             subject = "Password Reset Request"
             body = f"Click the following link to reset your password: {reset_link}"
             yag.send(email, subject, body)
@@ -783,7 +784,14 @@ class AdminDashboard:
                 else:
                     st.error(message)
 
-        st.button("Back to Login", on_click=lambda: st.session_state.pop("reset_password", None))
+        st.button("Back to Login", on_click = self.clear_reset_state)
+
+    
+    def clear_reset_state(self):
+        st.session_state.pop("reset_password", None)
+        st.session_state.pop("reset_token", None)
+        st.query_params.clear()
+        st.session_state["reroute_to_login"] = True  # Signal rerun outside
 
 
     def run(self):
@@ -813,6 +821,16 @@ class AdminDashboard:
                 """)
             return
         
+        query_params = st.query_params
+        if "reset_token" in query_params and "reset_password" not in st.session_state:
+            st.session_state["reset_token"] = query_params["reset_token"]
+            st.session_state["reset_password"] = True
+            st.rerun()  # Set state and rerun to render the correct page
+    
+        if st.session_state.get("reroute_to_login"):
+            st.session_state.pop("reroute_to_login")
+            st.rerun()
+            
         if st.session_state.get("reset_password"):
             self.render_password_reset()  # Show password reset page
         elif st.session_state.get('authentication_status'):
