@@ -810,7 +810,7 @@ class VolunteerTimesheet:
             self.render_time_entry()
 
         with tab2:
-            self.render_statistics()
+            self.render_statistics(username)
         
         with tab3:
             self.render_profile(username)
@@ -1086,122 +1086,114 @@ class VolunteerTimesheet:
             conn.autocommit = True
             self.db_manager.release_connection(conn)
 
-    def render_statistics(self) -> None:
+    def render_statistics(self, username: str) -> None:
         """
-        Renders volunteer statistics based on submitted timesheet data from the database.
+        Renders personal volunteer statistics for the logged-in user.
+        Filters and visualizes only their own timesheet data.
         """
-        st.header("Volunteer Hours Statistics")
+        st.header("Your Volunteer Statistics")
 
         conn = self.db_manager.get_connection()
         try:
-            # Total Volunteer Hours
             with conn.cursor() as cursor:
-                cursor.execute("SELECT SUM(hours) FROM timesheets WHERE status = 'Approved'")
+                # Get volunteer's internal ID and volunteer_id string
+                cursor.execute("SELECT id, volunteer_id FROM volunteers WHERE username = %s", (username,))
                 result = cursor.fetchone()
-                total_hours = result[0] if result[0] else 0
-            
-            # Most Active Project
-            with conn.cursor() as cursor:
+                if not result:
+                    st.error("User not found.")
+                    return
+
+                volunteer_internal_id, volunteer_id_str = result
+
+                # Total Volunteer Hours
+                cursor.execute("SELECT SUM(hours) FROM timesheets WHERE status = 'Approved' AND volunteer_id = %s", (volunteer_internal_id,))
+                total_hours = cursor.fetchone()[0] or 0
+
+                # Most Active Project
                 cursor.execute("""
                     SELECT p.name, SUM(t.hours) as total_hours
                     FROM timesheets t
                     JOIN projects p ON t.project_id = p.id
-                    WHERE t.status = 'Approved'
+                    WHERE t.status = 'Approved' AND t.volunteer_id = %s
                     GROUP BY p.name
                     ORDER BY total_hours DESC
                     LIMIT 1
-                """)
+                """, (volunteer_internal_id,))
                 result = cursor.fetchone()
                 most_active_project = result[0] if result else "N/A"
-            
-            # Estimate number of weeks
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT MIN(date), MAX(date) FROM timesheets")
+
+                # Number of Weeks Active
+                cursor.execute("SELECT MIN(date), MAX(date) FROM timesheets WHERE volunteer_id = %s", (volunteer_internal_id,))
                 result = cursor.fetchone()
                 if result[0] and result[1]:
                     min_date, max_date = result[0], result[1]
                     num_weeks = max((max_date - min_date).days // 7, 1)
                 else:
                     num_weeks = 1
-            
-            avg_weekly_hours = total_hours / num_weeks if num_weeks > 0 else 0
-            
-            # Number of unique projects
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT COUNT(DISTINCT project_id) FROM timesheets")
+
+                avg_weekly_hours = total_hours / num_weeks
+
+                # Number of unique projects
+                cursor.execute("SELECT COUNT(DISTINCT project_id) FROM timesheets WHERE volunteer_id = %s", (volunteer_internal_id,))
                 unique_projects = cursor.fetchone()[0]
-            
-            # Total unique volunteers
-            with conn.cursor() as cursor:
-                cursor.execute("SELECT COUNT(DISTINCT volunteer_id) FROM timesheets")
-                total_volunteers = cursor.fetchone()[0]
-            
-            # Top 5 most active volunteers
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                cursor.execute("""
-                    SELECT v.name, SUM(t.hours) as total_hours
-                    FROM timesheets t
-                    JOIN volunteers v ON t.volunteer_id = v.id
-                    WHERE t.status = 'Approved'
-                    GROUP BY v.name
-                    ORDER BY total_hours DESC
-                    LIMIT 5
-                """)
-                top_volunteers_data = cursor.fetchall()
-                top_volunteers = pd.DataFrame(top_volunteers_data)
-            
-            # Daily trend of volunteer hours
+
+            # Daily trend of volunteer hours (last 30 days)
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
                     SELECT date, SUM(hours) as total_hours
                     FROM timesheets
+                    WHERE volunteer_id = %s
                     GROUP BY date
-                    ORDER BY date
-                """)
+                    ORDER BY date DESC
+                    LIMIT 30
+                """, (volunteer_internal_id,))
                 daily_hours_data = cursor.fetchall()
                 daily_hours = pd.DataFrame(daily_hours_data)
-            
-            # Weekly trend of volunteer hours
+                if not daily_hours.empty and 'date' in daily_hours.columns:
+                    daily_hours = daily_hours.sort_values(by="date")
+
+            # Weekly trend (last 30 weeks)
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
                     SELECT DATE_TRUNC('week', date) AS week, SUM(hours) as total_hours
                     FROM timesheets
-                    WHERE status = 'Approved'
+                    WHERE status = 'Approved' AND volunteer_id = %s
                     GROUP BY week
-                    ORDER BY week
-                """)
+                    ORDER BY week DESC
+                    LIMIT 30
+                """, (volunteer_internal_id,))
                 weekly_hours_data = cursor.fetchall()
                 weekly_hours = pd.DataFrame(weekly_hours_data)
-            
-            # Project distribution
+                if not weekly_hours.empty and 'week' in weekly_hours.columns:
+                    weekly_hours = weekly_hours.sort_values(by="week")
+
+            # Project-wise distribution
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
                     SELECT p.name, SUM(t.hours) as total_hours
                     FROM timesheets t
                     JOIN projects p ON t.project_id = p.id
-                    WHERE t.status = 'Approved'
+                    WHERE t.status = 'Approved' AND t.volunteer_id = %s
                     GROUP BY p.name
                     ORDER BY total_hours DESC
-                """)
+                """, (volunteer_internal_id,))
                 project_data = cursor.fetchall()
                 project_totals = pd.DataFrame(project_data)
-            
-            # Layout: Key statistics
+
+            # Key Metrics
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("Total Volunteer Hours", f"{total_hours:.1f}")
+                st.metric("Total Hours", f"{total_hours:.1f}")
                 st.metric("Most Active Project", most_active_project)
             with col2:
-                st.metric("Average Weekly Hours", f"{avg_weekly_hours:.1f}")
-                st.metric("Projects Supported", f"{unique_projects}")
+                st.metric("Avg Weekly Hours", f"{avg_weekly_hours:.1f}")
+                st.metric("Projects Involved", f"{unique_projects}")
             with col3:
-                st.metric("Total Volunteers", f"{total_volunteers}")
-                if not top_volunteers.empty:
-                    st.write("### 🏆 Top 5 Volunteers")
-                    st.write(top_volunteers.rename(columns={"total_hours": "Total Hours"}))
-            
-            # Visualization: Hours per project (Pie Chart)
-            st.subheader("📊 Project-wise Hour Distribution")
+                st.metric("Weeks Active", f"{num_weeks}")
+                st.metric("Volunteer ID", volunteer_id_str)
+
+            # Charts
+            st.subheader("📊 Your Contribution by Project")
             if not project_totals.empty:
                 fig, ax = plt.subplots()
                 project_totals['total_hours'] = pd.to_numeric(project_totals['total_hours'], errors='coerce')
@@ -1209,10 +1201,9 @@ class VolunteerTimesheet:
                 ax.set_ylabel("")
                 st.pyplot(fig)
             else:
-                st.info("No project data available for visualization.")
-            
-            # Visualization: Daily trend of hours logged
-            st.subheader("📅 Daily Volunteer Hours Trend")
+                st.info("No project data available.")
+
+            st.subheader("📅 Daily Hours (Last 30 Days)")
             if not daily_hours.empty:
                 fig, ax = plt.subplots()
                 daily_hours['total_hours'] = pd.to_numeric(daily_hours['total_hours'], errors='coerce')
@@ -1222,10 +1213,9 @@ class VolunteerTimesheet:
                 plt.xticks(rotation=45)
                 st.pyplot(fig)
             else:
-                st.info("No daily trend data available.")
-            
-            # Visualization: Weekly trend of hours logged
-            st.subheader("📈 Weekly Volunteer Hours Trend")
+                st.info("No daily data.")
+
+            st.subheader("📈 Weekly Hours (Last 30 Weeks)")
             if not weekly_hours.empty:
                 fig, ax = plt.subplots()
                 weekly_hours['total_hours'] = pd.to_numeric(weekly_hours['total_hours'], errors='coerce')
@@ -1235,12 +1225,13 @@ class VolunteerTimesheet:
                 plt.xticks(rotation=45)
                 st.pyplot(fig)
             else:
-                st.info("No weekly trend data available.")
-                
+                st.info("No weekly data.")
+
         except Exception as e:
             st.error(f"Error retrieving statistics: {e}")
         finally:
             self.db_manager.release_connection(conn)
+
 
 def hash_function(password: str) -> str:
     """Hash a password using bcrypt."""
