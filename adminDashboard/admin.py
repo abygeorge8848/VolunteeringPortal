@@ -354,13 +354,13 @@ class AdminDashboard:
             cursor = self.conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
                 """
-                SELECT v.id, v.name, v.email, 
+                SELECT v.id, v.name, v.email, v.created_at,
                        COALESCE(SUM(t.hours), 0) as total_hours,
                        COUNT(DISTINCT p.id) as projects_count
                 FROM volunteers v
                 LEFT JOIN timesheets t ON v.id = t.volunteer_id AND t.status = 'Approved'
                 LEFT JOIN projects p ON t.project_id = p.id
-                GROUP BY v.id, v.name, v.email
+                GROUP BY v.id, v.name, v.email, v.created_at
                 ORDER BY total_hours DESC
                 """
             )
@@ -452,6 +452,7 @@ class AdminDashboard:
             except Exception as e:
                 st.error(f'An error occurred: {e}')
 
+
     def render_dashboard(self):
         """Render the admin dashboard."""
         # Header with title and logout button
@@ -481,6 +482,7 @@ class AdminDashboard:
             
         with projects_tab:
             self.render_project_management()
+            
     
     def render_pending_hours(self):
         """Render the pending hours tab."""
@@ -511,6 +513,7 @@ class AdminDashboard:
                             st.rerun()
                         else:
                             st.error(message)
+                            
     
     def render_approved_hours(self):
         """Render the approved hours tab."""
@@ -578,6 +581,7 @@ class AdminDashboard:
                         st.success(message)
                     else:
                         st.error(message)
+
     
     def render_volunteers_list(self):
         """Render the volunteers list tab."""
@@ -597,13 +601,16 @@ class AdminDashboard:
             
             # Display volunteer statistics
             st.subheader("Volunteer Statistics")
-            stat_columns = ['name', 'total_hours', 'projects_count']
+            stat_columns = ['name', 'total_hours', 'projects_count', 'created_at']
             if all(col in volunteers_df.columns for col in stat_columns):
                 stats_df = volunteers_df[stat_columns].copy()
                 # Format total_hours to 1 decimal place
                 stats_df['total_hours'] = stats_df['total_hours'].apply(lambda x: f"{x:.1f}")
                 st.dataframe(stats_df, use_container_width=True)
+
+                
     
+
     def render_project_management(self):
         """Render the project management tab."""
         st.header("Manage Projects")
