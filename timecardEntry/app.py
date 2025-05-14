@@ -11,6 +11,7 @@ from psycopg2 import pool
 from psycopg2.extras import RealDictCursor
 import os
 import yagmail
+from io import BytesIO
 from dotenv import load_dotenv
 
 # Load environment variables from .env
@@ -22,7 +23,8 @@ class DatabaseManager:
     def __init__(self):
         """Initialize the database connection pool."""
         # Database connection parameters
-        db_host = os.getenv("DB_HOST", "host.docker.internal")  # Use Docker's internal hostname
+        # db_host = os.getenv("DB_HOST", "host.docker.internal")  # Use Docker's internal hostname
+        db_host = "127.0.0.1"
         db_port = os.getenv("DB_PORT")
         db_name = os.getenv("DB_NAME")
         db_user = os.getenv("DB_USER")
@@ -883,9 +885,13 @@ class VolunteerTimesheet:
                     experience = st.text_area("Previous Experience", value=experience or "")
     
                     st.markdown("#### Upload Documents")
+                    
                     def show_upload(label, file_blob):
                         if file_blob:
-                            st.image(bytes(file_blob), width=200, caption=f"Existing {label}")
+                            try:
+                                st.image(BytesIO(file_blob), width=200, caption=f"Existing {label}")
+                            except Exception:
+                                st.warning(f"{label}: Cannot preview image. It may be corrupted or in an unsupported format.")
                         else:
                             st.markdown(f"**{label}:** _No document uploaded_")
                         return st.file_uploader(f"Upload New {label}", type=["jpg", "jpeg", "png"], key=label)
@@ -936,9 +942,9 @@ class VolunteerTimesheet:
                                 interest_fields,
                                 skills,
                                 experience,
-                                passport_img.read() if passport_img else profile[17],
-                                aadhar_img.read() if aadhar_img else profile[18],
-                                pan_img.read() if pan_img else profile[19],
+                                passport_img_new.read() if passport_img_new is not None else bytes(profile[17]),
+                                aadhar_img_new.read() if aadhar_img_new is not None else bytes(profile[18]),
+                                pan_img_new.read() if pan_img_new is not None else bytes(profile[19]),
                                 username
                             ))
                             conn.commit()
