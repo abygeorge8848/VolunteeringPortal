@@ -11,7 +11,8 @@ import streamlit_authenticator as stauth
 from configparser import ConfigParser
 from dotenv import load_dotenv
 import yagmail
-import time
+import io
+from PIL import Image
 # Load environment variables from .env
 load_dotenv()
 
@@ -51,7 +52,8 @@ class AdminDashboard:
         """Connect to PostgreSQL database using config."""
         try:
             # Try to get database connection parameters from environment variables first
-            db_host = os.getenv("DB_HOST", "host.docker.internal")  # Use Docker's internal hostname
+            # db_host = os.getenv("DB_HOST", "host.docker.internal")  # Use Docker's internal hostname
+            db_host = "127.0.0.1"
             db_port = os.getenv("DB_PORT")
             db_name = os.getenv("DB_NAME")
             db_user = os.getenv("DB_USER")
@@ -354,7 +356,7 @@ class AdminDashboard:
             cursor = self.conn.cursor(cursor_factory=RealDictCursor)
             cursor.execute(
                 """
-                SELECT v.id, v.name, v.email, v.created_at,
+                SELECT v.id, v.name, v.email, v.created_at, v.volunteer_id,
                        COALESCE(SUM(t.hours), 0) as total_hours,
                        COUNT(DISTINCT p.id) as projects_count
                 FROM volunteers v
@@ -365,11 +367,51 @@ class AdminDashboard:
                 """
             )
             stats = cursor.fetchall()
+            # print(f"The stats are : {stats}")
             cursor.close()
             return stats
         except Exception as e:
             st.error(f"Error fetching volunteer statistics: {e}")
             return []
+        
+    
+    def get_all_volunteer_names(self):
+        """Fetch all volunteer names and IDs."""
+        try:
+            cursor = self.conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("SELECT id, name FROM volunteers ORDER BY name ASC;")
+            volunteers = cursor.fetchall()
+            cursor.close()
+            return volunteers
+        except Exception as e:
+            st.error(f"Error fetching volunteer list: {e}")
+            return []
+
+    def get_volunteer_details_by_id(self, volunteer_id):
+        """Fetch full details of a volunteer by their ID."""
+        try:
+            cursor = self.conn.cursor(cursor_factory=RealDictCursor)
+            cursor.execute("SELECT * FROM volunteers WHERE id = %s;", (volunteer_id,))
+            result = cursor.fetchone()
+            cursor.close()
+            return result
+        except Exception as e:
+            st.error(f"Error fetching volunteer details: {e}")
+            return None
+        
+    def render_image_from_bytea(self, label, byte_data):
+        """Render an image from BYTEA if data exists."""
+        if byte_data:
+            try:
+                image = Image.open(io.BytesIO(byte_data))
+                st.markdown(f"**{label}**")
+                st.image(image, use_container_width=True)
+            except Exception as e:
+                st.warning(f"{label} could not be displayed (invalid image format).")
+        else:
+            st.info(f"No {label.lower()} uploaded.")
+
+
 
     def export_timesheet_data(self, data):
         """Convert timesheet data to DataFrame and export to CSV."""
@@ -467,8 +509,8 @@ class AdminDashboard:
                 st.rerun()
         
         # Create tabs for different admin functions
-        pending_tab, approved_tab, volunteers_tab, projects_tab = st.tabs([
-            "Pending Hours", "Approved Hours", "Volunteers", "Manage Projects"
+        pending_tab, approved_tab, volunteers_tab, volunteer_lookup_tab, projects_tab = st.tabs([
+            "Pending Hours", "Approved Hours", "Volunteers", "Volunteer Details", "Manage Projects"
         ])
         
         with pending_tab:
@@ -479,6 +521,9 @@ class AdminDashboard:
             
         with volunteers_tab:
             self.render_volunteers_list()
+
+        with volunteer_lookup_tab:
+            self.render_volunteer_lookup()
             
         with projects_tab:
             self.render_project_management()
@@ -595,7 +640,7 @@ class AdminDashboard:
         else:
             # Convert to DataFrame for display
             volunteers_df = pd.DataFrame(volunteer_stats)
-            basic_columns = ['name', 'email']
+            basic_columns = ['name', 'email', 'volunteer_id']
             if all(col in volunteers_df.columns for col in basic_columns):
                 st.dataframe(volunteers_df[basic_columns], use_container_width=True)
             
@@ -609,7 +654,43 @@ class AdminDashboard:
                 st.dataframe(stats_df, use_container_width=True)
 
                 
-    
+    def render_volunteer_lookup(self):
+        """Render a tab where admin can search and view full details of a volunteer."""
+        st.header("Volunteer Lookup")
+
+        # Fetch all volunteers' names and IDs for dropdown
+        volunteers = self.get_all_volunteer_names()
+        if not volunteers:
+            st.info("No volunteers found.")
+            return
+
+        name_to_id_map = {v["name"]: v["id"] for v in volunteers}
+        selected_name = st.selectbox("Search Volunteer by Name", list(name_to_id_map.keys()))
+
+        if selected_name:
+            volunteer_id = name_to_id_map[selected_name]
+            details = self.get_volunteer_details_by_id(volunteer_id)
+
+            if details:
+                st.subheader(f"Details for {selected_name}")
+
+                # Display all text fields
+                text_fields = details.copy()
+                for field in ['passport_photo', 'aadhar_card_image', 'pan_card_image', 'password_hash']:
+                    text_fields.pop(field, None)
+
+                for key, value in text_fields.items():
+                    st.write(f"**{key.replace('_', ' ').title()}**: {value}")
+
+                # Display images
+                st.subheader("Uploaded Documents")
+                self.render_image_from_bytea("Passport Photo", details.get("passport_photo"))
+                self.render_image_from_bytea("Aadhar Card", details.get("aadhar_card_image"))
+                self.render_image_from_bytea("PAN Card", details.get("pan_card_image"))
+            else:
+                st.warning("No details found for the selected volunteer.")
+
+
 
     def render_project_management(self):
         """Render the project management tab."""
