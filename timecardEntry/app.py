@@ -393,7 +393,9 @@ class VolunteerTimesheet:
                 finally:
                     self.db_manager.release_connection(conn)
                 
-                self.render()
+                # self.render()
+                st.rerun()
+                return
             else:
                 if st.session_state.get('FormSubmitter:Login-Login', False):
                     st.error('Incorrect username or password. Please try again.')
