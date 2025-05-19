@@ -1283,34 +1283,34 @@ def main():
         st.session_state["username"] = None
 
     # **Restore session from authenticator cookies if available**
-    if st.session_state["authentication_status"] is None:
-        try:
-            name, authentication_status, username = timesheet.authenticator.login("silent")
+    # if st.session_state["authentication_status"] is None:
+    #     try:
+    #         name, authentication_status, username = timesheet.authenticator.login("silent")
 
-            if authentication_status:
-                # Get volunteer ID
-                conn = timesheet.db_manager.get_connection()
-                try:
-                    with conn.cursor() as cursor:
-                        cursor.execute("SELECT id FROM volunteers WHERE username = %s", (username,))
-                        result = cursor.fetchone()
-                        print(f"The volunteer id : {result[0]}")
-                        if result:
-                            st.session_state.volunteer_id = result[0]
-                finally:
-                    timesheet.db_manager.release_connection(conn)
+    #         if authentication_status:
+    #             # Get volunteer ID
+    #             conn = timesheet.db_manager.get_connection()
+    #             try:
+    #                 with conn.cursor() as cursor:
+    #                     cursor.execute("SELECT id FROM volunteers WHERE username = %s", (username,))
+    #                     result = cursor.fetchone()
+    #                     print(f"The volunteer id : {result[0]}")
+    #                     if result:
+    #                         st.session_state.volunteer_id = result[0]
+    #             finally:
+    #                 timesheet.db_manager.release_connection(conn)
                 
-                # Restore session
-                st.session_state["authentication_status"] = True
-                st.session_state["username"] = username
-                # st.rerun()  # Immediately rerun to apply session state
+    #             # Restore session
+    #             st.session_state["authentication_status"] = True
+    #             st.session_state["username"] = username
+    #             # st.rerun()  # Immediately rerun to apply session state
 
-            else:
-                # If cookies fail, set explicit False to avoid limbo state
-                st.session_state["authentication_status"] = False
+    #         else:
+    #             # If cookies fail, set explicit False to avoid limbo state
+    #             st.session_state["authentication_status"] = False
 
-        except Exception:
-            st.session_state["authentication_status"] = False  # Ensure clean state
+    #     except Exception:
+    #         st.session_state["authentication_status"] = False  # Ensure clean state
 
     # **Now decide what to render based on session state**
     if st.session_state.get("reset_password"):
