@@ -818,11 +818,11 @@ class AdminDashboard:
 
             # Generate and store a token
             token = self.create_reset_token(email)
-            endpoint = os.getenv("ENDPOINT")
+            endpoint = st.secrets["ENDPOINT"]
             reset_link = f"{endpoint}/?reset_token={token}"
 
-            server_email = os.getenv("EMAIL")
-            password = os.getenv("PASSWORD")
+            server_email = st.secrets["EMAIL"]
+            password = st.secrets["PASSWORD"]
 
             print(f"Email is : {server_email}")
             print(f"Password is : {password}")
