@@ -53,7 +53,8 @@ class AdminDashboard:
         try:
             # Try to get database connection parameters from environment variables first
             # db_host = os.getenv("DB_HOST", "host.docker.internal")  # Use Docker's internal hostname
-            db_host = "127.0.0.1"
+            # db_host = "127.0.0.1"
+            db_host = os.getenv("DB_HOST")
             db_port = os.getenv("DB_PORT")
             db_name = os.getenv("DB_NAME")
             db_user = os.getenv("DB_USER")
