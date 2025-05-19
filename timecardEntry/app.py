@@ -24,7 +24,7 @@ class DatabaseManager:
         """Initialize the database connection pool."""
         # Database connection parameters
         # db_host = os.getenv("DB_HOST", "host.docker.internal")  # Use Docker's internal hostname
-        db_host = "127.0.0.1"
+        db_host = os.getenv("DB_HOST")
         db_port = os.getenv("DB_PORT")
         db_name = os.getenv("DB_NAME")
         db_user = os.getenv("DB_USER")
@@ -74,6 +74,7 @@ class DatabaseManager:
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS volunteers (
                         id SERIAL PRIMARY KEY,
+                        volunteer_id VARCHAR(20) UNIQUE,
                         username VARCHAR(100) UNIQUE NOT NULL,
                         name VARCHAR(100) NOT NULL,
                         email VARCHAR(255) UNIQUE NOT NULL,
