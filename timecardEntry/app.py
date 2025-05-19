@@ -24,11 +24,16 @@ class DatabaseManager:
         """Initialize the database connection pool."""
         # Database connection parameters
         # db_host = os.getenv("DB_HOST", "host.docker.internal")  # Use Docker's internal hostname
-        db_host = os.getenv("DB_HOST")
-        db_port = os.getenv("DB_PORT")
-        db_name = os.getenv("DB_NAME")
-        db_user = os.getenv("DB_USER")
-        db_password = os.getenv("DB_PASSWORD")
+        # db_host = os.getenv("DB_HOST")
+        # db_port = os.getenv("DB_PORT")
+        # db_name = os.getenv("DB_NAME")
+        # db_user = os.getenv("DB_USER")
+        # db_password = os.getenv("DB_PASSWORD")
+        db_host = st.secrets["DB_HOST"]
+        db_port = st.secrets["DB_PORT"]
+        db_name = st.secrets["DB_NAME"]
+        db_user = st.secrets["DB_USER"]
+        db_password = st.secrets["DB_PASSWORD"]
 
         self.db_params = {
             'dbname': db_name,
