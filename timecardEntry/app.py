@@ -1301,7 +1301,7 @@ def main():
                 # Restore session
                 st.session_state["authentication_status"] = True
                 st.session_state["username"] = username
-                st.rerun()  # Immediately rerun to apply session state
+                # st.rerun()  # Immediately rerun to apply session state
 
             else:
                 # If cookies fail, set explicit False to avoid limbo state
